@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boussole</title><link rel="stylesheet" href="/style.css"></head>
+<body><main class="shell">
+<header><div><div class="brand">BOUSSOLE <span>V0</span></div><p>Comprendre ce qui bloque. Aller chercher la suite au bon endroit.</p></div>
+<div class="actions"><button id="diagBtn">Diagnostic</button><button id="newBtn">Nouvelle situation</button></div></header>
+<div class="layout"><section class="chat">
+<div id="messages" class="messages"><article class="assistant"><p>Qu’est-ce qui t’amène ? Raconte-moi simplement ce qui se passe, même si c’est confus.</p></article></div>
+<form id="form"><textarea id="input" rows="3" placeholder="Écris comme tu parlerais…" required></textarea>
+<div class="sendrow"><span id="status"></span><button class="primary" type="submit">Envoyer</button></div></form></section>
+<aside><section><div class="eyebrow">CARTE ACTUELLE</div><div id="phase" class="phase">Brouillard</div><div id="map"><p class="muted">Elle se construira à partir de ce qui est réellement établi.</p></div></section>
+<section id="experimentBox" class="hidden"><div class="eyebrow">DANS LE RÉEL</div><div id="experiment"></div></section>
+<section id="diagnosticBox" class="hidden"><div class="eyebrow">DIAGNOSTIC TEST</div><pre id="diagnostic"></pre></section></aside></div></main>
+<script src="/app.js"></script></body></html>
