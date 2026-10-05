@@ -51,12 +51,12 @@ function schema() {
     additionalProperties: false,
     properties: {
       mode: { type: "string", enum: ["understand","reflect","synthesize","answer","ask","research","challenge","propose_experiment","prepare_experiment","learn_from_experiment","direction","withdraw"] },
-      message: { type: "string" },
+      message: { type: "string", maxLength: 3500 },
       phase: { type: "string", enum: ["brouillard","clarte","experience","apprentissage","direction"] },
       target_unknown: { type: ["string","null"] },
       knowledge_source: { type: "string", enum: ["introspection","memory","recognition","external","third_party","real_world_experiment","none"] },
       question_needed: { type: "boolean" },
-      question_reason: { type: "string" },
+      question_reason: { type: "string", maxLength: 700 },
       research_query: { type: ["string","null"] },
       stop_reason: { type: ["string","null"] },
       state: {
@@ -65,18 +65,18 @@ function schema() {
         properties: {
           phase: { type: "string" },
           situation: { type: "string" },
-          facts: { type: "array", items: { type: "string" } },
-          observations: { type: "array", items: { type: "string" } },
-          feelings_reported: { type: "array", items: { type: "string" } },
-          interpretations: { type: "array", items: { type: "string" } },
-          hypotheses: { type: "array", items: { type: "string" } },
-          tensions: { type: "array", items: { type: "string" } },
-          unknowns: { type: "array", items: { type: "string" } },
-          questions_attempted: { type: "array", items: { type: "string" } },
+          facts: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          observations: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          feelings_reported: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          interpretations: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          hypotheses: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          tensions: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          unknowns: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          questions_attempted: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
           pending_experiment: { type: ["string","null"] },
-          experiments: { type: "array", items: { type: "string" } },
-          learnings: { type: "array", items: { type: "string" } },
-          directions: { type: "array", items: { type: "string" } },
+          experiments: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          learnings: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
+          directions: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
           next_action: { type: ["string","null"] },
           last_mode: { type: "string" },
           withdrawal_ready: { type: "boolean" }
@@ -97,14 +97,22 @@ function sanitizeState(state = {}) {
 }
 
 async function structuredTurn(context) {
-  const response = await client.responses.create({
+  const makeRequest = (extraInstruction = "", maxTokens = 4200) => client.responses.create({
     model: MODEL,
-    instructions: SYSTEM,
+    instructions: SYSTEM + extraInstruction,
     input: JSON.stringify(context),
     text: { format: { type: "json_schema", name: "boussole_turn", strict: true, schema: schema() } },
-    max_output_tokens: 1800
+    max_output_tokens: maxTokens
   });
-  return JSON.parse(response.output_text);
+
+  let response = await makeRequest();
+  try {
+    return JSON.parse(response.output_text);
+  } catch (firstError) {
+    console.warn("BOUSSOLE_JSON_RETRY", firstError?.message || firstError);
+    response = await makeRequest("\nIMPORTANT TECHNIQUE : la réponse précédente a été tronquée ou invalide. Retourne un JSON COMPLET et CONCIS. Réduis fortement la carte : seulement les éléments indispensables, sans répétition.", 6500);
+    return JSON.parse(response.output_text);
+  }
 }
 
 async function runModel(session, userText) {
