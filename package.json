@@ -1,14 +1,12 @@
 {
   "name": "boussole-v0",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test tests/*.test.js"
+    "start": "node server.js"
   },
   "dependencies": {
-    "dotenv": "latest",
     "express": "latest",
     "openai": "latest"
   }
