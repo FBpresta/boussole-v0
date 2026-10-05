@@ -11,6 +11,15 @@ const client = API_KEY ? new OpenAI({ apiKey: API_KEY }) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url), "utf8");
 const sessions = new Map();
 
+function normalizeMessages(messages = []) {
+  if (!Array.isArray(messages)) return [];
+  return messages.slice(-24).map(m => ({
+    role: m?.role === "assistant" ? "assistant" : "user",
+    text: String(m?.text || "").slice(0, 6000),
+    ...(m?.diagnostic ? { diagnostic: m.diagnostic } : {})
+  })).filter(m => m.text.trim());
+}
+
 app.use(express.json({ limit: "1mb" }));
 app.get("/", (_req, res) => res.sendFile(new URL("./index.html", import.meta.url).pathname));
 
@@ -128,9 +137,14 @@ async function runModel(session, userText) {
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, configured: Boolean(client), model: MODEL }));
 
-app.post("/api/session", (_req, res) => {
+app.post("/api/session", (req, res) => {
   const id = crypto.randomUUID();
-  const session = { id, state: blankState(), messages: [] };
+  const resume = req.body?.resume || {};
+  const session = {
+    id,
+    state: sanitizeState(resume.state || blankState()),
+    messages: normalizeMessages(resume.messages || [])
+  };
   sessions.set(id, session);
   res.json(session);
 });
@@ -152,8 +166,17 @@ app.post("/api/session/:id/message", async (req, res) => {
     const text = String(req.body?.message || "").trim();
     if (!text) return res.status(400).json({ error: "Message vide" });
 
-    const session = sessions.get(req.params.id);
-    if (!session) return res.status(404).json({ error: "Session introuvable" });
+    let session = sessions.get(req.params.id);
+    if (!session) {
+      const resume = req.body?.resume || {};
+      session = {
+        id: req.params.id,
+        state: sanitizeState(resume.state || blankState()),
+        messages: normalizeMessages(resume.messages || [])
+      };
+      sessions.set(req.params.id, session);
+      console.log("Session restaurée automatiquement après redémarrage Render");
+    }
 
     session.messages.push({ role: "user", text });
     const result = await runModel(session, text);
@@ -174,7 +197,7 @@ app.post("/api/session/:id/message", async (req, res) => {
     session.messages.push({ role: "assistant", text: result.message, diagnostic });
     res.json({ message: result.message, state: session.state, diagnostic });
   } catch (error) {
-    console.error(error);
+    console.error("BOUSSOLE_ENGINE_ERROR", error?.status || "", error?.code || "", error?.message || error);
     res.status(500).json({ error: "Le moteur n'a pas pu répondre." });
   }
 });
