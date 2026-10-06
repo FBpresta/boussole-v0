@@ -6,6 +6,7 @@ import OpenAI from "openai";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-sol";
+const APP_VERSION = "0.4";
 const API_KEY = process.env.OPENAI_API_KEY || "";
 const client = API_KEY ? new OpenAI({ apiKey: API_KEY }) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url), "utf8");
@@ -41,7 +42,10 @@ function blankState() {
     directions: [],
     next_action: null,
     last_mode: "understand",
-    withdrawal_ready: false
+    withdrawal_ready: false,
+    decisive_unknown: null,
+    tipping_point: null,
+    map_items: []
   };
 }
 
@@ -59,6 +63,7 @@ function schema() {
       question_reason: { type: "string", maxLength: 700 },
       research_query: { type: ["string","null"] },
       stop_reason: { type: ["string","null"] },
+      route: { type: "string", enum: ["QUESTIONNER","COMPRENDRE","RECHERCHER","EXPERIMENTER","STOP"] },
       state: {
         type: "object",
         additionalProperties: false,
@@ -79,12 +84,28 @@ function schema() {
           directions: { type: "array", items: { type: "string", maxLength: 700 }, maxItems: 10 },
           next_action: { type: ["string","null"] },
           last_mode: { type: "string" },
-          withdrawal_ready: { type: "boolean" }
+          withdrawal_ready: { type: "boolean" },
+          decisive_unknown: { type: ["string","null"] },
+          tipping_point: { type: ["string","null"] },
+          map_items: {
+            type: "array",
+            maxItems: 14,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                kind: { type: "string", enum: ["etabli","hypothese","inconnu","test","apprentissage","direction"] },
+                text: { type: "string", maxLength: 500 },
+                source: { type: "string", enum: ["utilisateur","recherche","experience","boussole"] }
+              },
+              required: ["kind","text","source"]
+            }
+          }
         },
-        required: ["phase","situation","facts","observations","feelings_reported","interpretations","hypotheses","tensions","unknowns","questions_attempted","pending_experiment","experiments","learnings","directions","next_action","last_mode","withdrawal_ready"]
+        required: ["phase","situation","facts","observations","feelings_reported","interpretations","hypotheses","tensions","unknowns","questions_attempted","pending_experiment","experiments","learnings","directions","next_action","last_mode","withdrawal_ready","decisive_unknown","tipping_point","map_items"]
       }
     },
-    required: ["mode","message","phase","target_unknown","knowledge_source","question_needed","question_reason","research_query","stop_reason","state"]
+    required: ["mode","message","phase","target_unknown","knowledge_source","question_needed","question_reason","research_query","stop_reason","route","state"]
   };
 }
 
@@ -92,6 +113,7 @@ function sanitizeState(state = {}) {
   const base = blankState();
   const out = { ...base, ...state };
   const arrays = ["facts","observations","feelings_reported","interpretations","hypotheses","tensions","unknowns","questions_attempted","experiments","learnings","directions"];
+  out.map_items = Array.isArray(out.map_items) ? out.map_items.slice(-14) : [];
   for (const key of arrays) out[key] = Array.isArray(out[key]) ? out[key].slice(-12) : [];
   return out;
 }
@@ -143,7 +165,7 @@ async function runModel(session, userText) {
   return result;
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true, configured: Boolean(client), model: MODEL }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, configured: Boolean(client), model: MODEL, version: APP_VERSION }));
 
 app.post("/api/session", (req, res) => {
   const id = crypto.randomUUID();
@@ -199,7 +221,10 @@ app.post("/api/session/:id/message", async (req, res) => {
       question_needed: result.question_needed,
       question_reason: result.question_reason,
       stop_reason: result.stop_reason,
-      research_query: result.research_query
+      research_query: result.research_query,
+      route: result.route,
+      decisive_unknown: session.state.decisive_unknown,
+      tipping_point: session.state.tipping_point
     };
 
     session.messages.push({ role: "assistant", text: result.message, diagnostic });
@@ -210,4 +235,4 @@ app.post("/api/session/:id/message", async (req, res) => {
   }
 });
 
-app.listen(PORT, "0.0.0.0", () => console.log(`Boussole V0 sur le port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () => console.log(`Boussole V${APP_VERSION} sur le port ${PORT}`));
