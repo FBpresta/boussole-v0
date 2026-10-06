@@ -6,7 +6,7 @@ import OpenAI from "openai";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-sol";
-const APP_VERSION = "0.4.2";
+const APP_VERSION = "0.4.3";
 const API_KEY = process.env.OPENAI_API_KEY || "";
 const client = API_KEY ? new OpenAI({ apiKey: API_KEY }) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url), "utf8");
@@ -14,10 +14,11 @@ const sessions = new Map();
 
 function normalizeMessages(messages = []) {
   if (!Array.isArray(messages)) return [];
-  return messages.slice(-24).map(m => ({
+  return messages.slice(-120).map(m => ({
     role: m?.role === "assistant" ? "assistant" : "user",
     text: String(m?.text || "").slice(0, 6000),
-    ...(m?.diagnostic ? { diagnostic: m.diagnostic } : {})
+    ...(m?.diagnostic ? { diagnostic: m.diagnostic } : {}),
+    ...(m?.state_snapshot ? { state_snapshot: sanitizeState(m.state_snapshot) } : {})
   })).filter(m => m.text.trim());
 }
 
@@ -159,6 +160,8 @@ async function runModel(session, userText) {
   let researchMs = 0;
   let synthesisMs = 0;
   let researchTriggered = false;
+  let researchQueryUsed = null;
+  let researchResultExcerpt = null;
 
   if (shouldResearch) {
     researchTriggered = true;
@@ -167,6 +170,7 @@ async function runModel(session, userText) {
       result.target_unknown ||
       `${userText} — recherche factuelle utile pour départager la prochaine étape`
     ).trim();
+    researchQueryUsed = query;
 
     const researchStart = Date.now();
     const research = await client.responses.create({
@@ -177,6 +181,7 @@ async function runModel(session, userText) {
       max_output_tokens: 1800
     });
     researchMs = Date.now() - researchStart;
+    researchResultExcerpt = String(research.output_text || "").slice(0, 7000);
 
     const synthesisStart = Date.now();
     result = await structuredTurn({
@@ -190,17 +195,19 @@ async function runModel(session, userText) {
   }
 
   const totalMs = Date.now() - totalStart;
-  console.log("BOUSSOLE_PERF", JSON.stringify({
+  const audit = {
+    version: APP_VERSION,
     route: result.route,
     mode: result.mode,
     researchTriggered,
-    routerMs,
-    researchMs,
-    synthesisMs,
-    totalMs
-  }));
+    researchQueryUsed,
+    researchResultExcerpt,
+    performance: { routerMs, researchMs, synthesisMs, totalMs }
+  };
 
-  return result;
+  console.log("BOUSSOLE_PERF", JSON.stringify(audit));
+
+  return { result, audit };
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true, configured: Boolean(client), model: MODEL, version: APP_VERSION }));
@@ -247,7 +254,7 @@ app.post("/api/session/:id/message", async (req, res) => {
     }
 
     session.messages.push({ role: "user", text });
-    const result = await runModel(session, text);
+    const { result, audit } = await runModel(session, text);
     session.state = sanitizeState(result.state);
     session.state.phase = result.phase;
     session.state.last_mode = result.mode;
@@ -262,10 +269,17 @@ app.post("/api/session/:id/message", async (req, res) => {
       research_query: result.research_query,
       route: result.route,
       decisive_unknown: session.state.decisive_unknown,
-      tipping_point: session.state.tipping_point
+      tipping_point: session.state.tipping_point,
+      version: APP_VERSION,
+      performance: audit.performance,
+      research: {
+        triggered: audit.researchTriggered,
+        query_used: audit.researchQueryUsed,
+        result_excerpt: audit.researchResultExcerpt
+      }
     };
 
-    session.messages.push({ role: "assistant", text: result.message, diagnostic });
+    session.messages.push({ role: "assistant", text: result.message, diagnostic, state_snapshot: session.state });
     res.json({ message: result.message, state: session.state, diagnostic });
   } catch (error) {
     console.error("BOUSSOLE_ENGINE_ERROR", error?.status || "", error?.code || "", error?.message || error);
