@@ -6,7 +6,7 @@ import OpenAI from "openai";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-sol";
-const APP_VERSION = "0.4.1";
+const APP_VERSION = "0.4.2";
 const API_KEY = process.env.OPENAI_API_KEY || "";
 const client = API_KEY ? new OpenAI({ apiKey: API_KEY }) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url), "utf8");
@@ -171,10 +171,10 @@ async function runModel(session, userText) {
     const researchStart = Date.now();
     const research = await client.responses.create({
       model: MODEL,
-      instructions: "Fais une recherche factuelle courte pour Boussole. Réponds en français. Utilise le web. Donne les sources ou organismes identifiables et les liens lorsqu'ils sont disponibles. Distingue les faits des incertitudes. Ne prends aucune décision personnelle à la place de l'utilisateur.",
+      instructions: "Fais la recherche web nécessaire pour répondre maintenant. Réponds en français. Cherche plusieurs formulations proches si la première est pauvre. Donne les sources ou organismes identifiables et les liens lorsqu'ils sont disponibles. Distingue faits et incertitudes. Ne promets aucune recherche ultérieure : tout ce qui peut être raisonnablement cherché pour ce tour doit être cherché pendant cet appel.",
       input: query,
       tools: [{ type: "web_search" }],
-      max_output_tokens: 1200
+      max_output_tokens: 1800
     });
     researchMs = Date.now() - researchStart;
 
@@ -183,7 +183,8 @@ async function runModel(session, userText) {
       ...context,
       first_router_result: result,
       research_query_used: query,
-      research_result: research.output_text
+      research_result: research.output_text,
+      execution_rule: "Le travail de recherche de ce tour est terminé. Réponds uniquement avec ce qui a réellement été trouvé. Tu ne peux pas annoncer 'je relance', 'je vais chercher', 'je reviens', 'je continue' ou toute action future non exécutée. Si les résultats sont insuffisants, dis-le clairement et propose une action immédiate ou une question réellement nécessaire."
     });
     synthesisMs = Date.now() - synthesisStart;
   }
