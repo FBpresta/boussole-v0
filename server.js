@@ -6,7 +6,7 @@ import OpenAI from "openai";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-sol";
-const APP_VERSION = "0.4";
+const APP_VERSION = "0.4.1";
 const API_KEY = process.env.OPENAI_API_KEY || "";
 const client = API_KEY ? new OpenAI({ apiKey: API_KEY }) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url), "utf8");
@@ -144,23 +144,60 @@ async function runModel(session, userText) {
     current_user_message: userText
   };
 
+  const totalStart = Date.now();
+  const routerStart = Date.now();
   let result = await structuredTurn(context);
+  const routerMs = Date.now() - routerStart;
 
-  if (result.mode === "research" && result.research_query) {
+  // La route est l'autorité de gouvernance. Une incohérence "route=RECHERCHER"
+  // mais "mode!=research" ne doit plus empêcher la recherche réelle.
+  const shouldResearch =
+    result.route === "RECHERCHER" ||
+    result.mode === "research" ||
+    result.knowledge_source === "external";
+
+  let researchMs = 0;
+  let synthesisMs = 0;
+  let researchTriggered = false;
+
+  if (shouldResearch) {
+    researchTriggered = true;
+    const query = String(
+      result.research_query ||
+      result.target_unknown ||
+      `${userText} — recherche factuelle utile pour départager la prochaine étape`
+    ).trim();
+
+    const researchStart = Date.now();
     const research = await client.responses.create({
       model: MODEL,
-      instructions: "Fais une recherche factuelle courte pour Boussole. Réponds en français, distingue les faits des incertitudes et ne prends aucune décision personnelle à la place de l'utilisateur.",
-      input: result.research_query,
+      instructions: "Fais une recherche factuelle courte pour Boussole. Réponds en français. Utilise le web. Donne les sources ou organismes identifiables et les liens lorsqu'ils sont disponibles. Distingue les faits des incertitudes. Ne prends aucune décision personnelle à la place de l'utilisateur.",
+      input: query,
       tools: [{ type: "web_search" }],
       max_output_tokens: 1200
     });
+    researchMs = Date.now() - researchStart;
 
+    const synthesisStart = Date.now();
     result = await structuredTurn({
       ...context,
       first_router_result: result,
+      research_query_used: query,
       research_result: research.output_text
     });
+    synthesisMs = Date.now() - synthesisStart;
   }
+
+  const totalMs = Date.now() - totalStart;
+  console.log("BOUSSOLE_PERF", JSON.stringify({
+    route: result.route,
+    mode: result.mode,
+    researchTriggered,
+    routerMs,
+    researchMs,
+    synthesisMs,
+    totalMs
+  }));
 
   return result;
 }

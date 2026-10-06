@@ -1,19 +1,16 @@
-BOUSSOLE V0.4 — FICHIERS À REMPLACER
+BOUSSOLE V0.4.1 — CORRECTIF CIBLÉ
 
-Remplacer dans le dépôt GitHub les 3 fichiers suivants :
+Remplacer :
 - server.js
 - system-prompt.txt
 - index.html
 
-Cette version ajoute :
-- carte vivante avec provenance visible ;
-- inconnue décisive ;
-- point de bascule ;
-- route interne QUESTIONNER / COMPRENDRE / RECHERCHER / EXPERIMENTER / STOP ;
-- règle anti-rumination ;
-- expériences diagnostiques ;
-- exigence de traçabilité des recherches externes ;
-- affichage V0.4 ;
-- conservation de la restauration de session et du correctif JSON de V0.3.
+Corrections :
+1. La route RECHERCHER déclenche désormais réellement la recherche, même si le modèle a renvoyé un mode incohérent.
+2. Une source de connaissance externe déclenche également la recherche.
+3. Si la requête de recherche manque, le serveur fabrique un repli à partir de l'inconnue ciblée / du message.
+4. Les logs affichent BOUSSOLE_PERF avec :
+   routerMs, researchMs, synthesisMs, totalMs et researchTriggered.
+5. Affichage V0.4.1.
 
-Après le déploiement Render, vérifier /api/health : version doit être "0.4".
+But : corriger uniquement les deux défauts trouvés au crash-test sans modifier la carte vivante.
