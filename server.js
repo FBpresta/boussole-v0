@@ -6,7 +6,7 @@ import OpenAI from "openai";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const MODEL = process.env.OPENAI_MODEL || "gpt-6-sol";
-const APP_VERSION = "0.4.4";
+const APP_VERSION = "0.4.5";
 const API_KEY = process.env.OPENAI_API_KEY || "";
 const client = API_KEY ? new OpenAI({ apiKey: API_KEY }) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url), "utf8");
@@ -117,6 +117,28 @@ function sanitizeState(state = {}) {
   out.map_items = Array.isArray(out.map_items) ? out.map_items.slice(-14) : [];
   for (const key of arrays) out[key] = Array.isArray(out[key]) ? out[key].slice(-12) : [];
   return out;
+}
+
+function governPhase(previousState = blankState(), proposedState = blankState(), proposedPhase = "brouillard") {
+  const previousExperiments = Array.isArray(previousState.experiments) ? previousState.experiments.length : 0;
+  const previousLearnings = Array.isArray(previousState.learnings) ? previousState.learnings.length : 0;
+  const experiments = Array.isArray(proposedState.experiments) ? proposedState.experiments.length : 0;
+  const learnings = Array.isArray(proposedState.learnings) ? proposedState.learnings.length : 0;
+  const hasPendingExperiment = Boolean(proposedState.pending_experiment);
+  const experimentJustCompleted = experiments > previousExperiments;
+  const learningJustAdded = learnings > previousLearnings;
+
+  // Une expérience seulement proposée/préparée n'est ni un apprentissage ni une direction.
+  if (hasPendingExperiment && !experimentJustCompleted && !learningJustAdded) return "experience";
+
+  // Le premier retour du réel doit être traité comme un apprentissage avant d'être converti en direction.
+  if (experimentJustCompleted || learningJustAdded) return "apprentissage";
+
+  // Une direction après expérimentation exige au moins un apprentissage déjà acquis.
+  // Sans expérience en jeu, une direction reste possible pour les situations résolubles sans test réel.
+  if (proposedPhase === "direction" && experiments > 0 && learnings === 0) return "apprentissage";
+
+  return proposedPhase;
 }
 
 async function structuredTurn(context) {
@@ -254,9 +276,10 @@ app.post("/api/session/:id/message", async (req, res) => {
     }
 
     session.messages.push({ role: "user", text });
+    const previousState = sanitizeState(session.state);
     const { result, audit } = await runModel(session, text);
     session.state = sanitizeState(result.state);
-    session.state.phase = result.phase;
+    session.state.phase = governPhase(previousState, session.state, result.phase);
     session.state.last_mode = result.mode;
 
     const diagnostic = {
