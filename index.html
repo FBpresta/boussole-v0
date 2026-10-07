@@ -11,8 +11,8 @@
 <body>
 <main class="shell">
 <header>
-<div><div class="brand">BOUSSOLE <span>V0.4.3</span></div><p>Comprendre ce qui bloque. Aller chercher la suite au bon endroit.</p></div>
-<div class="actions"><button id="diagBtn">Diagnostic</button><button id="newBtn">Nouvelle situation</button></div>
+<div><div class="brand">BOUSSOLE <span>V0.4.4</span></div><p>Comprendre ce qui bloque. Aller chercher la suite au bon endroit.</p></div>
+<div class="actions"><button id="exportTopBtn" type="button">Exporter</button><button id="diagBtn" type="button" aria-expanded="false">Diagnostic</button><button id="newBtn" type="button">Nouvelle situation</button></div>
 </header>
 <div class="layout">
 <section class="chat">
@@ -20,7 +20,7 @@
 <form id="form"><textarea id="input" rows="3" placeholder="Écris comme tu parlerais…" required></textarea><div class="sendrow"><span id="status"></span><button class="primary" type="submit">Envoyer</button></div></form>
 </section>
 <aside>
-<section><div class="eyebrow">CARTE VIVANTE</div><div id="phase" class="phase">Brouillard</div><div id="focuses"></div><div id="map"><p class="muted">Elle se construira à partir de ce qui est réellement établi.</p></div><div id="route" class="route"></div></section>
+<section><div class="eyebrow">CARTE VIVANTE</div><div id="phase" class="phase">Brouillard</div><div id="focuses"></div><div id="map"><p class="muted">La carte se construira à partir de ce qui est réellement établi.</p></div><div id="route" class="route"></div></section>
 <section id="experimentBox" class="hidden"><div class="eyebrow">DANS LE RÉEL</div><div id="experiment"></div></section>
 <section id="diagnosticBox" class="hidden"><div class="eyebrow">DIAGNOSTIC TEST</div><p class="muted">À la fin d’un test, exporte toute la session et envoie le fichier pour analyse.</p><button id="exportBtn" type="button">Exporter la session</button><pre id="diagnostic"></pre></section>
 </aside>
@@ -28,7 +28,7 @@
 </main>
 <script>
 const $=s=>document.querySelector(s);let sessionId=null,lastDiag=null,currentState=null,localMessages=[],auditEvents=[];
-const APP_VERSION="0.4.3";
+const APP_VERSION="0.4.4";
 const fields=[["situation","Situation"],["tensions","Tensions"],["next_action","Prochaine action"]];
 const kindLabels={etabli:"Établi",hypothese:"Hypothèse",inconnu:"À éclaircir",test:"En test",apprentissage:"Appris",direction:"Direction provisoire"};
 const sourceLabels={utilisateur:"Dit par toi",recherche:"Recherche externe",experience:"Observé dans le réel",boussole:"Hypothèse Boussole"};
@@ -55,14 +55,19 @@ function renderState(s){
  } else {
    for(const [k,label] of fields){let v=s[k];if(Array.isArray(v))v=v.join(' · ');if(v){const d=document.createElement('div');d.className='mapitem';const b=document.createElement('b');b.textContent=label;const p=document.createElement('div');p.textContent=v;d.append(b,p);m.append(d)}}
  }
- if(!m.children.length)m.innerHTML='<p class="muted">Elle se construira à partir de ce qui est réellement établi.</p>';
+ if(!m.children.length)m.innerHTML='<p class="muted">La carte se construira à partir de ce qui est réellement établi.</p>';
  const box=$('#experimentBox');if(s.pending_experiment){box.classList.remove('hidden');$('#experiment').textContent=s.pending_experiment}else box.classList.add('hidden');
  $('#route').textContent=lastDiag?.route ? 'Route actuelle : '+lastDiag.route : '';
 }
 function renderDiag(){if(lastDiag)$('#diagnostic').textContent=JSON.stringify(lastDiag,null,2)}
 $('#form').addEventListener('submit',async e=>{e.preventDefault();const input=$('#input'),text=input.value.trim();if(!text)return;const startedAt=new Date().toISOString(),clientStart=performance.now(),stateBefore=currentState?JSON.parse(JSON.stringify(currentState)):null;add('user',text);localMessages.push({role:'user',text});saveCache();input.value='';input.disabled=true;$('#status').textContent='Boussole cherche l’intervention la plus utile…';try{const payload={message:text,resume:{state:currentState,messages:localMessages.slice(0,-1)}};let r=await fetch(`/api/session/${sessionId}/message`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});let d=await r.json();if(r.status===404){const restored=await createSession(readCache());r=await fetch(`/api/session/${restored.id}/message`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});d=await r.json()}if(!r.ok)throw new Error(d.error||'Erreur');add('assistant',d.message);const stateSnapshot=JSON.parse(JSON.stringify(d.state));localMessages.push({role:'assistant',text:d.message,diagnostic:d.diagnostic,state_snapshot:stateSnapshot});lastDiag=d.diagnostic;auditEvents.push({type:'turn',started_at:startedAt,finished_at:new Date().toISOString(),client_elapsed_ms:Math.round(performance.now()-clientStart),user_message:text,state_before:stateBefore,assistant_message:d.message,diagnostic:d.diagnostic,state_after:stateSnapshot});renderDiag();renderState(d.state);saveCache()}catch(err){const msg='Je n’ai pas pu répondre : '+err.message;add('assistant',msg);auditEvents.push({type:'error',started_at:startedAt,finished_at:new Date().toISOString(),client_elapsed_ms:Math.round(performance.now()-clientStart),user_message:text,error:String(err?.message||err),state_before:stateBefore});saveCache()}finally{input.disabled=false;input.focus();$('#status').textContent=''}});
-$('#diagBtn').onclick=()=>{$('#diagnosticBox').classList.toggle('hidden');renderDiag()};
-$('#exportBtn').onclick=()=>{const payload={format:'boussole-session-audit',format_version:1,app_version:APP_VERSION,exported_at:new Date().toISOString(),session_id:sessionId,current_state:currentState,messages:localMessages,audit_events:auditEvents,browser:{user_agent:navigator.userAgent,language:navigator.language}};const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');const stamp=new Date().toISOString().replace(/[:.]/g,'-');a.href=url;a.download=`boussole-session-${stamp}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+function exportSession(){
+ const payload={format:'boussole-session-audit',format_version:1,app_version:APP_VERSION,exported_at:new Date().toISOString(),session_id:sessionId,current_state:currentState,messages:localMessages,audit_events:auditEvents,browser:{user_agent:navigator.userAgent,language:navigator.language}};
+ const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');const stamp=new Date().toISOString().replace(/[:.]/g,'-');a.href=url;a.download=`boussole-session-${stamp}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)
+}
+$('#diagBtn').onclick=()=>{const box=$('#diagnosticBox');const opening=box.classList.contains('hidden');box.classList.toggle('hidden');$('#diagBtn').setAttribute('aria-expanded',String(opening));renderDiag();if(opening)setTimeout(()=>box.scrollIntoView({behavior:'smooth',block:'nearest'}),0)};
+$('#exportBtn').onclick=exportSession;
+$('#exportTopBtn').onclick=exportSession;
 $('#newBtn').onclick=async()=>{if(sessionId)await fetch('/api/session/'+sessionId,{method:'DELETE'});localStorage.removeItem('boussole_session');localStorage.removeItem('boussole_cache');currentState=null;localMessages=[];auditEvents=[];$('#messages').innerHTML='';add('assistant','Qu’est-ce qui t’amène ? Raconte-moi simplement ce qui se passe, même si c’est confus.');lastDiag=null;await createSession()};
 load();
 </script>
