@@ -4,7 +4,7 @@ import {assessResearch} from "./research-privacy.js";
 import {blankState,sanitizeState,governPhase,schema} from "./governance.js";
 export {blankState,sanitizeState,governPhase} from "./governance.js";
 const APP_VERSION = "0.5.0-consolidee-dev";
-const MODEL = process.env.OPENAI_MODEL || "gpt-6-sol";
+const MODEL = process.env.OPENAI_MODEL || "gpt-5-mini";
 const client = process.env.OPENAI_API_KEY ? new OpenAI({apiKey:process.env.OPENAI_API_KEY,timeout:95000,maxRetries:1}) : null;
 const SYSTEM = fs.readFileSync(new URL("./system-prompt.txt", import.meta.url),"utf8");
 export const engineConfigured = Boolean(client);
